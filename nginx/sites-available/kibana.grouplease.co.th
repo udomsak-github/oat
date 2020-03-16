@@ -1,0 +1,72 @@
+#   lua_package_path '/usr/local/share/lua/5.3/?.lua;;';
+#   lua_shared_dict discovery 1m;
+#   lua_shared_dict jwks 1m;
+   #lua_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+#   lua_ssl_trusted_certificate /etc/letsencrypt/live/es-test.grouplease.co.th/fullchain.pem; 
+   upstream upstream_server {
+        server  192.168.9.131:5601      max_fails=3 fail_timeout=30s;
+   }
+
+   server {
+        listen       443  ssl;
+        server_name  kibana.grouplease.co.th;
+        proxy_intercept_errors off;
+#    ssl_certificate /etc/letsencrypt/live/grouplease.co.th/fullchain.pem; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/grouplease.co.th-0001/fullchain.pem;
+#    ssl_certificate_key /etc/letsencrypt/live/grouplease.co.th/privkey.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/grouplease.co.th-0001/privkey.pem;
+        server_tokens             off;
+
+        access_log  /var/log/nginx/access-open.log;
+        error_log  /var/log/nginx/open.error.log;
+
+        root   /var/www/html;
+
+        #lua_code_cache off;
+        #There is a bug I found with sessions not sticking properly and causing spontaneous 403's
+        #For now, set the session secret hard-coded
+        #set $session_secret 723p4hR234t36VsCD8g565325IC0022G;
+
+        access_by_lua '
+          local opts = {
+            redirect_uri_path = "/redirect_uri",
+            accept_none_alg = true,
+            discovery = "https://auth.grouplease.co.th/auth/realms/it/.well-known/openid-configuration",
+            client_id = "account",
+            client_secret = "ce99c38d-d0f2-4671-ad3d-49dd7093deb1",
+            ssl_verify = "no",
+            redirect_uri_scheme = "https",
+            logout_path = "/logout",
+            redirect_after_logout_uri = "https://auth.grouplease.co.th/auth/realms/it/protocol/openid-connect/logout",
+            redirect_after_logout_with_id_token_hint = false,
+            session_contents = {id_token=true}
+          }
+          local res, err = require("resty.openidc").authenticate(opts)
+
+          if err then
+            ngx.status = 403
+            ngx.say(err)
+            ngx.exit(ngx.HTTP_FORBIDDEN)
+          end
+        ';
+
+        location / {
+
+           proxy_pass http://upstream_server;
+        }
+   
+}
+
+
+   server {
+    if ($host ~ ^[^.]+\.grouplease\.co\.th$) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+        listen       80;
+        server_name  kibana.grouplease.co.th;
+    return 404; # managed by Certbot
+
+
+}

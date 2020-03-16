@@ -1,0 +1,1 @@
+/etc/nginx/sites-available/collectiongotracker.gl-lao.com
